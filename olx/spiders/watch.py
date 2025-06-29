@@ -1,49 +1,55 @@
-import os, hashlib, scrapy
+import os, hashlib, json, urllib.parse, scrapy
 
-SEARCH_URL = os.getenv("SEARCH_URL")      # URL-ul OLX primit prin secret
+SEARCH_URL = os.getenv("SEARCH_URL")          # linkul OLX pus ca secret
+API_BASE   = "https://www.olx.ro/api/v1/offers/"  # endpoint JSON
 
-class WatchSpider(scrapy.Spider):
+def build_api_url(search_url: str, offset=0, limit=40) -> str:
+    """
+    Convert URL-ul de căutare OLX în apel API.
+    Păstrează toți parametrii (q, currency, sort etc.).
+    """
+    parsed = urllib.parse.urlparse(search_url)
+    params = urllib.parse.parse_qs(parsed.query)
+    # OLX API foloseşte alţi parametri pentru paginare
+    params["offset"] = [str(offset)]
+    params["limit"]  = [str(limit)]
+    query = urllib.parse.urlencode({k: v[0] for k, v in params.items()})
+    return f"{API_BASE}?{query}"
+
+class WatchJsonSpider(scrapy.Spider):
     name = "watch"
-    allowed_domains = ["olx.ro"]
-    start_urls = [SEARCH_URL]
-
     custom_settings = {
-        # pipeline-ul care trimite pe Telegram
         "ITEM_PIPELINES": {"pipelines.TelegramPipeline": 300},
-
-        # Antete implicite
+        "DOWNLOAD_DELAY": 1,
         "DEFAULT_REQUEST_HEADERS": {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/126.0 Safari/537.36"
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
             ),
-            # Acceptăm cookies ⇒ pagina vine fără overlay
-            "Cookie": "cookiePolicy=1",
+            # acceptăm răspuns JSON
+            "Accept": "application/json",
         },
-
-        # mic delay să nu bombardăm site-ul
-        "DOWNLOAD_DELAY": 1,
     }
 
-    def parse(self, response):
-        # carduri OLX: două variante de atribute
-        for ad in response.css(
-            'div[data-testid="listing-ad"], div[data-cy="l-card"]'
-        ):
-            link  = ad.css("a::attr(href)").get()
-            title = ad.css("h6::text, h5::text").get()
-            price = ad.css('p[data-testid="ad-price"]::text').get()
-            if link and title:
-                uid = hashlib.sha1(link.encode()).hexdigest()
-                yield {
-                    "id": uid,
-                    "title": title.strip(),
-                    "price": price,
-                    "link": link,
-                }
+    def start_requests(self):
+        api_url = build_api_url(SEARCH_URL)
+        yield scrapy.Request(api_url, callback=self.parse_api)
 
-        # pagina următoare (săgeata „Următorul”)
-        next_page = response.css('a[aria-label="Următorul"]::attr(href)').get()
-        if next_page:
-            yield response.follow(next_page, callback=self.parse)
+    def parse_api(self, response):
+        data = json.loads(response.text)
+        for offer in data.get("data", []):
+            uid   = str(offer["id"])
+            title = offer["title"]
+            price = offer["price"]["value"]["display"]
+            link  = offer["url"]
+            yield {
+                "id": uid,
+                "title": title,
+                "price": price,
+                "link": link,
+            }
+
+        # Paginare – dacă API returnează `links.next`
+        next_link = data.get("links", {}).get("next")
+        if next_link:
+            yield scrapy.Request(next_link, callback=self.parse_api)

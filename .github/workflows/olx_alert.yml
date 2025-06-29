@@ -2,21 +2,28 @@ name: OLX Telegram Alerts
 
 on:
   schedule:
-    # rulează din 5 în 5 minute, 24/7
+    # rulează din 5 în 5 minute
     - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:
   crawl:
-    # nu permite două job-uri simultane
+    # nu lăsăm două job-uri simultane
     concurrency:
       group: olx-alerts
       cancel-in-progress: true
 
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
+
+      # 1️⃣  aducem state.json din execuția precedentă (dacă există)
+      - name: Download state
+        uses: actions/download-artifact@v4
+        with:
+          name: state          # numele artifact-ului
+          path: .              # îl pune în rădăcina workspace-ului
+        continue-on-error: true # prima dată nu există; nu trata ca eroare
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -32,3 +39,11 @@ jobs:
           TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
         run: scrapy crawl watch
+
+      # 2️⃣  încărcăm state.json actualizat ca artifact
+      - name: Upload state
+        uses: actions/upload-artifact@v4
+        with:
+          name: state
+          path: state.json
+          if-no-files-found: error   # dacă spiderul n-a creat fișierul, marchează eroare

@@ -2,13 +2,11 @@ name: OLX Telegram Alerts
 
 on:
   schedule:
-    # rulează din 5 în 5 minute
-    - cron: "*/5 * * * *"
+    - cron: "*/5 * * * *"      # verifică la 5 minute
   workflow_dispatch:
 
 jobs:
   crawl:
-    # nu lăsăm două job-uri simultane
     concurrency:
       group: olx-alerts
       cancel-in-progress: true
@@ -17,13 +15,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1️⃣  aducem state.json din execuția precedentă (dacă există)
+      # 1️⃣  readucem lista de anunţuri deja trimise
       - name: Download state
         uses: actions/download-artifact@v4
         with:
-          name: state          # numele artifact-ului
-          path: .              # îl pune în rădăcina workspace-ului
-        continue-on-error: true # prima dată nu există; nu trata ca eroare
+          name: state
+          path: .
+        continue-on-error: true   # prima execuţie nu are artifact
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -33,17 +31,26 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run spider
+      # 2️⃣  rulează căutarea PS VITA
+      - name: Spider PS Vita
         env:
           SEARCH_URL:          ${{ secrets.SEARCH_URL }}
           TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
         run: scrapy crawl watch
 
-      # 2️⃣  încărcăm state.json actualizat ca artifact
+      # 3️⃣  rulează căutarea PSP (foloseşte ACELAŞI state.json)
+      - name: Spider PSP
+        env:
+          SEARCH_URL:          ${{ secrets.SEARCH_URL_PSP }}
+          TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: scrapy crawl watch
+
+      # 4️⃣  salvăm lista actualizată pentru execuţia următoare
       - name: Upload state
         uses: actions/upload-artifact@v4
         with:
           name: state
           path: state.json
-          if-no-files-found: error   # dacă spiderul n-a creat fișierul, marchează eroare
+          if-no-files-found: error

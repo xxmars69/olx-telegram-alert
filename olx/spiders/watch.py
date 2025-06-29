@@ -19,7 +19,7 @@ class WatchSpider(scrapy.Spider):
     }
 
     def parse(self, response):
-        for ad in response.css('div[data-testid="l-card"]'):
+        for ad in response.css('div[data-cy="l-card"]'):
             link  = ad.css("a::attr(href)").get()
             title = ad.css("h6::text, h5::text").get()
             price = ad.css('p[data-testid="ad-price"]::text').get()

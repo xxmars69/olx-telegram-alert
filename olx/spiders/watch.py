@@ -4,24 +4,26 @@ SEARCH_URL = os.getenv("SEARCH_URL")
 API_BASE   = "https://www.olx.ro/api/v1/offers/"
 
 def build_api_url(src: str, offset=0, limit=40) -> str:
-    """Transformă orice URL OLX de căutare într-un apel API JSON."""
+    """Transformă un URL OLX de căutare într-un apel API JSON corect (query=…)."""
     parsed = urllib.parse.urlparse(src)
-
-    # 1️⃣  preluăm parametrii existenţi
     params = urllib.parse.parse_qs(parsed.query)
 
-    # 2️⃣  dacă keyword-ul e în path:  /q-laptop-dell/
+    # Dacă keyword-ul e în path ( /q-ps%20vita/ ), extragem și suprascriem
     m = re.search(r"/q-([^/]+)/", parsed.path)
     if m:
-        params["q"] = [urllib.parse.unquote_plus(m.group(1))]
+        params["query"] = [urllib.parse.unquote_plus(m.group(1))]
 
-    # 3️⃣  paginaţie
+    # API-ul nu recunoaște vechiul „q”, doar „query”
+    if "q" in params and "query" not in params:
+        params["query"] = params.pop("q")
+
+    # Paginare
     params["offset"] = [str(offset)]
     params["limit"]  = [str(limit)]
 
+    # Construim URL final
     query = urllib.parse.urlencode({k: v[0] for k, v in params.items()})
     return f"{API_BASE}?{query}"
-
 
 class WatchJsonSpider(scrapy.Spider):
     name = "watch"
@@ -42,7 +44,6 @@ class WatchJsonSpider(scrapy.Spider):
 
     def parse_api(self, response):
         data = json.loads(response.text)
-
         for offer in data.get("data", []):
             uid   = str(offer.get("id"))
             title = offer.get("title", "").strip()
@@ -55,6 +56,7 @@ class WatchJsonSpider(scrapy.Spider):
             if uid and title and link:
                 yield {"id": uid, "title": title, "price": price, "link": link}
 
+        # pagina următoare
         next_link = data.get("links", {}).get("next")
         if next_link:
             yield scrapy.Request(next_link, callback=self.parse_api)

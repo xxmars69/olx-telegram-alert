@@ -2,12 +2,19 @@ name: OLX Telegram Alerts
 
 on:
   schedule:
-    - cron: "*/30 * * * *"     # rulează la 30 min
-  workflow_dispatch:           # buton Run workflow manual
+    # rulează din 5 în 5 minute, 24/7
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
 
 jobs:
   crawl:
+    # nu permite două job-uri simultane
+    concurrency:
+      group: olx-alerts
+      cancel-in-progress: true
+
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 

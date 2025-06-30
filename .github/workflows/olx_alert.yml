@@ -8,8 +8,8 @@ on:
 jobs:
   crawl:
     concurrency:
-      group: olx-alerts
-      cancel-in-progress: true
+      group: olx-alerts        # PĂSTREZI grupul
+      # cancel-in-progress: true   ←  ȘTERGE sau comentează
 
     runs-on: ubuntu-latest
     steps:

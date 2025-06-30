@@ -2,26 +2,29 @@ name: OLX Telegram Alerts
 
 on:
   schedule:
-    - cron: "*/5 * * * *"        # verifică la 5 minute
+    # rulează din 5 în 5 minute (ora UTC)
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:
   crawl:
+    # nu anulăm un job aflat în derulare (deduplicarea are nevoie să termine)
     concurrency:
-      group: olx-alerts          # NU mai avem cancel-in-progress
+      group: olx-alerts         # același grup → un singur job simultan
 
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
-      # 1️⃣ RESTORE: ia cel mai recent state.json din cache
+      # 1️⃣ RESTORE — aducem state.json din cache (dacă există)
       - name: Restore state cache
         id: cache-state
         uses: actions/cache/restore@v4
         with:
           path: state.json
-          # fallback la orice cheie care începe cu prefixul
-          key:   dummy          # (obligatoriu, dar nu se pot folosi expresii)
+          # key obligatoriu (nu trebuie să existe); restore-keys caută cea mai nouă potrivire
+          key: dummy
           restore-keys: |
             olx-state-
 
@@ -33,7 +36,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # 2️⃣ rulează spiderul (PS Vita)
+      # 2️⃣ Spider OLX – PS Vita
       - name: Run spider (PS Vita)
         env:
           SEARCH_URL:          ${{ secrets.SEARCH_URL }}
@@ -41,19 +44,18 @@ jobs:
           TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
         run: scrapy crawl watch
 
-      # ── de-coment dacă ai a doua căutare (PSP) ─────────────────
-      # - name: Run spider (PSP)
-      #   env:
-      #     SEARCH_URL:          ${{ secrets.SEARCH_URL_PSP }}
-      #     TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      #     TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
-      #   run: scrapy crawl watch
-      # ────────────────────────────────────────────────────────────
+      # 3️⃣ Spider OLX – PSP
+      - name: Run spider (PSP)
+        env:
+          SEARCH_URL:          ${{ secrets.SEARCH_URL_PSP }}
+          TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: scrapy crawl watch
 
-      # 3️⃣ SAVE: urcă state.json sub o cheie unică
+      # 4️⃣ SAVE — încărcăm state.json actualizat în cache (cheie unică pe run_id)
       - name: Save state cache
         uses: actions/cache/save@v4
-        if: always()                       # rulează chiar dacă spiderul iese cu 0 item
+        if: always()            # rulează chiar dacă spiderul găsește 0 item-uri
         with:
           path: state.json
           key: olx-state-${{ github.run_id }}
